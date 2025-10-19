@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,13 +12,13 @@ import {
   Loader2,
   DollarSign,
   Sparkles,
+  File,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Sliders as SlidersIcon } from "@geist-ui/icons";
 import ReactMarkdown from "react-markdown";
-import { askGemini, validateMarkdown, generateOptimizationPlan } from "@/lib/gemini";
-import { api } from "@/lib/api";
+import { useOptimizeJob } from "@/providers/optimize-job";
 
 /* ----------------------------- Validation ------------------------------ */
 
@@ -36,56 +34,7 @@ const budgetSchema = z.object({
 type BudgetFormData = z.infer<typeof budgetSchema>;
 
 /* ------------------------------ Types/API ------------------------------ */
-
-interface OptimizeItem {
-  id: string;
-  cost: number;
-  benefit: number;
-}
-interface OptimizeResponse {
-  picks?: OptimizeItem[];
-  totalGain?: number;
-  remainingBudget?: number;
-}
-
-// Site analytics types for Gemini context
-interface Site {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  CO2e_tpy: number;
-  CH4_tpy: number;
-  EmissionsScore: number;
-  FloodScore: number;
-  HeatScore: number;
-  DroughtScore: number;
-  Risk: number;
-}
-
-type HazardSnapshot = {
-  flood: 0 | 1;
-  dm: "None" | "D0" | "D1" | "D2" | "D3" | "D4";
-  heatIndex: number;
-  ts: number;
-};
-
-interface LiveScoreResponse {
-  meta: { cacheHits: number; duration_ms: number };
-  items: (Site & { HazardSnapshot: HazardSnapshot })[];
-}
-
-async function optimizeBudget(budget: number): Promise<OptimizeResponse> {
-  const { data } = await axios.post<OptimizeResponse>(
-    `http://localhost:3001/optimize?budget=${budget}`
-  );
-  return data;
-}
-
-async function fetchScoreLive(): Promise<Site[]> {
-  const { data } = await api.get<LiveScoreResponse>("/score/live");
-  return data.items;
-}
+// Types are provided by the OptimizeJob provider
 
 /* ------------------------------ Utilities ------------------------------ */
 
@@ -113,10 +62,7 @@ function formatCurrency(value: number, digits = 0) {
 /* -------------------------------- Page --------------------------------- */
 
 export default function Page() {
-  const [result, setResult] = useState<OptimizeResponse | null>(null);
-  const [report, setReport] = useState<string | null>(null);
-  const [reportError, setReportError] = useState<string | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
+  const { status, result, report, charts, error, start } = useOptimizeJob();
 
   const {
     register,
@@ -132,42 +78,8 @@ export default function Page() {
 
   const budget = watch("budget");
 
-  // Analytics data for Gemini context
-  const { data: sites } = useQuery({
-    queryKey: ["score-live"],
-    queryFn: fetchScoreLive,
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-
-  const mutation = useMutation({
-    mutationFn: optimizeBudget,
-    onSuccess: async (data) => {
-      const hasPicks = (data.picks?.length ?? 0) > 0;
-      const nonZero = (data.totalGain ?? 0) > 0 || (data.remainingBudget ?? 0) > 0;
-      if (!hasPicks && !nonZero) {
-        try {
-          const aiPlan = await generateOptimizationPlan(sites ?? [], budget ?? 0);
-          setResult({
-            picks: aiPlan.picks,
-            totalGain: aiPlan.totalGain,
-            remainingBudget: aiPlan.remainingBudget,
-          });
-        } catch {
-          setResult(data);
-        }
-      } else {
-        setResult(data);
-      }
-    },
-  });
-
   const onSubmit = (data: BudgetFormData) => {
-    // reset previous report when re-running optimization
-    setReport(null);
-    setReportError(null);
-    mutation.mutate(data.budget);
+    start(data.budget);
   };
 
   const bump = (delta: number) => {
@@ -177,7 +89,7 @@ export default function Page() {
     });
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const dir = e.deltaY > 0 ? -1 : 1;
     bump(dir * BUDGET_STEP);
@@ -192,60 +104,6 @@ export default function Page() {
       bump(-BUDGET_STEP);
     }
   };
-
-  // Build a prompt for Gemini to generate an optimization strategy report
-  const buildReportPrompt = (res: OptimizeResponse, currentBudget: number) => {
-    const picks = res.picks ?? [];
-    const totalGain = res.totalGain ?? 0;
-    const remaining = res.remainingBudget ?? 0;
-    const lines = picks
-      .map((p, idx) => `- ${idx + 1}. ID: ${p.id} | Cost: $${p.cost.toLocaleString()} | Benefit: ${p.benefit.toFixed(3)} | Efficiency: ${(p.benefit / p.cost).toFixed(6)} per $1`)
-      .join("\n");
-
-    return `Generate a concise Optimization Strategy Report for the selected mitigation plan.
-
-CONTEXT:
-- Budget: $${currentBudget.toLocaleString()}
-- Picks: ${picks.length} items
-- Total Expected Risk Reduction (0–1 scale): ${totalGain.toFixed(3)} (${(totalGain * 100).toFixed(1)}%)
-- Remaining Budget: $${remaining.toLocaleString()}
-
-PICKS DETAIL:
-${lines || "- (no picks)"}
-
-REQUIREMENTS:
-- Use markdown with clear sections: Overview, Portfolio Impact, Prioritized Actions, Implementation Plan (0-90 days), Risk Hotspots by Site Profile, Monitoring KPIs, and Next Steps.
-- Reference emissions vs risk patterns to justify priorities.
-- Keep it actionable, with bullet points and specific thresholds.
-- Avoid any HTML; markdown only.`;
-  };
-
-  const generateReport = async () => {
-    if (!result || !sites || sites.length === 0) return;
-    setReport(null);
-    setReportError(null);
-    setReportLoading(true);
-    try {
-      const prompt = buildReportPrompt(result, budget ?? 0);
-      const md = await askGemini(prompt, sites as Site[]);
-      if (!validateMarkdown(md)) {
-        console.warn("Gemini response may not be proper markdown");
-      }
-      setReport(md);
-    } catch (e) {
-      setReportError(e instanceof Error ? e.message : "Failed to generate report");
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  // Auto-generate a report when optimization completes and analytics data is available
-  useEffect(() => {
-    if (result && sites && sites.length > 0 && !report && !reportLoading) {
-      generateReport();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, sites]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-white">
@@ -303,7 +161,7 @@ REQUIREMENTS:
 
                   <div className="relative" onWheel={onWheel}>
                     <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                    <Input
+<Input
                       id="budget"
                       type="number"
                       step={BUDGET_STEP}
@@ -312,7 +170,7 @@ REQUIREMENTS:
                       onKeyDown={onArrow}
                       {...register("budget", { valueAsNumber: true })}
                       className="rounded-xl border-white/10 bg-white/[0.06] pl-8 text-white placeholder:text-white/40 focus-visible:ring-2 focus-visible:ring-white/40"
-                      disabled={mutation.isPending}
+                      disabled={status === "running"}
                     />
                   </div>
                   {errors.budget && (
@@ -323,11 +181,11 @@ REQUIREMENTS:
                 </div>
 
                 <div className="flex gap-2 sm:justify-end">
-                  <Button
+<Button
                     type="button"
                     variant="outline"
                     onClick={() => bump(-BUDGET_STEP)}
-                    disabled={mutation.isPending}
+                    disabled={status === "running"}
                     className="rounded-xl border-white/20 bg-white/[0.04] text-white hover:bg-white/[0.08]"
                   >
                     − {formatCurrency(BUDGET_STEP, 0)}
@@ -336,19 +194,19 @@ REQUIREMENTS:
                     type="button"
                     variant="outline"
                     onClick={() => bump(BUDGET_STEP)}
-                    disabled={mutation.isPending}
+                    disabled={status === "running"}
                     className="rounded-xl border-white/20 bg-white/[0.04] text-white hover:bg-white/[0.08]"
                   >
                     + {formatCurrency(BUDGET_STEP, 0)}
                   </Button>
                 </div>
 
-                <Button
+<Button
                   type="submit"
-                  disabled={mutation.isPending}
+                  disabled={status === "running"}
                   className="rounded-xl bg-white text-black hover:bg-white/90"
                 >
-                  {mutation.isPending ? (
+                  {status === "running" ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Optimizing...
@@ -418,7 +276,7 @@ REQUIREMENTS:
                   <button
                     key={p}
                     type="button"
-                    disabled={mutation.isPending}
+disabled={status === "running"}
                     onClick={() =>
                       setValue("budget", p, {
                         shouldValidate: true,
@@ -438,15 +296,13 @@ REQUIREMENTS:
                 ))}
               </div>
 
-              {mutation.isError && (
+{status === "error" && (
                 <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">
                   <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                   <div>
                     <p className="font-medium">Error</p>
                     <p className="text-xs">
-                      {mutation.error instanceof Error
-                        ? mutation.error.message
-                        : "Failed to optimize budget. Please try again."}
+                      {error ?? "Failed to optimize budget. Please try again."}
                     </p>
                   </div>
                 </div>
@@ -609,16 +465,16 @@ REQUIREMENTS:
             <Card className="rounded-2xl border-white/10 bg-white/[0.04] backdrop-blur ring-1 ring-inset ring-white/5">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between text-base text-white/90">
-                  <span>Optimization Strategy Report</span>
+                  <File className="h-4 w-4 opacity-80" />
                   <div className="flex items-center gap-2">
-                    <Button
+<Button
                       size="sm"
                       variant="outline"
-                      onClick={generateReport}
-                      disabled={reportLoading || !sites?.length}
+                      onClick={() => start(budget ?? 0)}
+                      disabled={status === "running"}
                       className="rounded-lg border-white/20 bg-white/[0.04] text-white hover:bg-white/[0.08]"
                     >
-                      {reportLoading ? (
+                      {status === "running" ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Generating...
@@ -631,54 +487,97 @@ REQUIREMENTS:
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {!sites?.length && (
-                  <p className="text-sm text-white/60">
-                    Analytics context unavailable. Report quality may be limited.
-                  </p>
-                )}
-                {reportError ? (
-                  <div className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-                    {reportError}
-                  </div>
-                ) : reportLoading ? (
+{status === "running" && !report && (
                   <div className="flex items-center gap-2 text-sm text-white/70">
                     <Loader2 className="h-4 w-4 animate-spin" /> Generating report...
                   </div>
-                ) : report ? (
-                  <div className="prose prose-invert max-w-none">
-                    <ReactMarkdown
-                      components={{
-                        h1: ({ node, ...props }) => (
-                          <h1 className="text-xl font-semibold text-white" {...props} />
-                        ),
-                        h2: ({ node, ...props }) => (
-                          <h2 className="text-lg font-semibold text-white" {...props} />
-                        ),
-                        p: ({ node, ...props }) => (
-                          <p className="text-white/85" {...props} />
-                        ),
-                        li: ({ node, ...props }) => (
-                          <li className="ml-4 list-disc text-white/85" {...props} />
-                        ),
-                        blockquote: ({ node, ...props }) => (
-                          <blockquote
-                            className="border-l-2 border-white/20 pl-3 text-white/70"
-                            {...props}
-                          />
-                        ),
-                        code: ({ node, ...props }) => {
-                          const isInline = !props.className || !props.className.includes('language-');
-                          return isInline ? (
-                            <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[12px]" {...props} />
-                          ) : (
-                            <code className="block whitespace-pre-wrap rounded bg-white/10 p-2 font-mono text-[12px]" {...props} />
-                          );
-                        },
-                      }}
-                    >
-                      {report}
-                    </ReactMarkdown>
-                  </div>
+                )}
+                {report ? (
+                  <>
+                    <div className="prose prose-invert max-w-none">
+                      <ReactMarkdown
+                        components={{
+                          h1: ({ node, ...props }) => (
+                            <h1
+                              className="text-xl font-semibold text-white"
+                              {...props}
+                            />
+                          ),
+                          h2: ({ node, ...props }) => (
+                            <h2
+                              className="text-lg font-semibold text-white"
+                              {...props}
+                            />
+                          ),
+                          p: ({ node, ...props }) => (
+                            <p className="text-white/85" {...props} />
+                          ),
+                          li: ({ node, ...props }) => (
+                            <li
+                              className="ml-4 list-disc text-white/85"
+                              {...props}
+                            />
+                          ),
+                          blockquote: ({ node, ...props }) => (
+                            <blockquote
+                              className="border-l-2 border-white/20 pl-3 text-white/70"
+                              {...props}
+                            />
+                          ),
+                          code: ({ node, ...props }) => {
+                            const isInline =
+                              !props.className ||
+                              !props.className.includes("language-");
+                            return isInline ? (
+                              <code
+                                className="rounded bg-white/10 px-1 py-0.5 font-mono text-[12px]"
+                                {...props}
+                              />
+                            ) : (
+                              <code
+                                className="block whitespace-pre-wrap rounded bg-white/10 p-2 font-mono text-[12px]"
+                                {...props}
+                              />
+                            );
+                          },
+                        }}
+                      >
+                        {report}
+                      </ReactMarkdown>
+                    </div>
+
+                    {charts.length > 0 && (
+                      <div className="mt-6 space-y-4">
+                        <h3 className="text-base font-semibold">
+                          Visualizations
+                        </h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {charts.map((img, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                            >
+                              <div className="mb-2 text-sm font-medium text-white/90">
+                                {img.title || `Chart ${idx + 1}`}
+                              </div>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={img.dataUrl}
+                                alt={img.title || `Chart ${idx + 1}`}
+                                className="w-full rounded-md border border-white/10"
+                                loading="lazy"
+                              />
+                              {img.description && (
+                                <p className="mt-2 text-xs text-white/70">
+                                  {img.description}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <p className="text-sm text-white/60">
                     No report yet. Run the optimizer to generate AI insights.

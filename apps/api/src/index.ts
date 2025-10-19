@@ -13,10 +13,11 @@ import { twin } from "./routes/twin.js";
 import { population } from "./routes/population.js";
 import { admin } from "./routes/admin.js";
 import { threshold } from "./routes/threshold.js";
+import { charts } from "./routes/charts.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 app.use("/health", health);
 app.use("/sites", sites);
@@ -30,6 +31,7 @@ app.use("/twin", twin);
 app.use("/population", population);
 app.use("/admin", admin);
 app.use("/threshold", threshold);
+app.use("/charts", charts);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.listen(PORT, () => console.log(`[api] listening on :${PORT}`));

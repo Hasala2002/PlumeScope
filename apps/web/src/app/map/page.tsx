@@ -718,14 +718,17 @@ export default function MapPage() {
     try {
       const newest = frames[0];
       if (newest) {
-        const denom = (scaleMode === "absolute" && (scaleMax ?? 0) > 0)
-          ? Math.max(scaleMax as number, newest.meta.maxC)
-          : newest.meta.maxC;
-        const thrC = thrMode === "relative" ? thrRelAlpha * newest.meta.maxC : thrAbs;
+        const denom =
+          scaleMode === "absolute" && (scaleMax ?? 0) > 0
+            ? Math.max(scaleMax as number, newest.meta.maxC)
+            : newest.meta.maxC;
+        const thrC =
+          thrMode === "relative" ? thrRelAlpha * newest.meta.maxC : thrAbs;
         const { n, cell, half, dir } = newest.meta;
         const theta = (dir * Math.PI) / 180;
-        const cos = Math.cos(theta), sin = Math.sin(theta);
-        const toOcc = (x:number, y:number) => {
+        const cos = Math.cos(theta),
+          sin = Math.sin(theta);
+        const toOcc = (x: number, y: number) => {
           const xe = x * cos - y * sin;
           const yn = x * sin + y * cos;
           if (Math.abs(xe) > occ.half || Math.abs(yn) > occ.half) return -1;
@@ -734,7 +737,8 @@ export default function MapPage() {
           if (cx < 0 || cy < 0 || cx >= occ.dim || cy >= occ.dim) return -1;
           return cy * occ.dim + cx;
         };
-        let sum = 0, count = 0;
+        let sum = 0,
+          count = 0;
         for (let j = 0; j < n; j++) {
           const row = newest.grid[j];
           for (let i = 0; i < n; i++) {
@@ -831,7 +835,10 @@ export default function MapPage() {
     // Use polygon-based geodesic area for display to avoid grid/threshold artifacts
     try {
       const ring = feature.geometry.coordinates[0] as [number, number][];
-      const m2poly = polygonAreaMetersFromLngLat(ring, { lat: plumeSite.lat, lon: plumeSite.lon });
+      const m2poly = polygonAreaMetersFromLngLat(ring, {
+        lat: plumeSite.lat,
+        lon: plumeSite.lon,
+      });
       setAreaInfo({
         m2: m2poly,
         ft2: m2poly * 10.7639,
@@ -861,7 +868,7 @@ export default function MapPage() {
       const angles = Array.from(
         new Set(
           iterFramesNewestFirst()
-            .map((f) => (typeof f?.meta?.dir === 'number' ? f.meta.dir : null))
+            .map((f) => (typeof f?.meta?.dir === "number" ? f.meta.dir : null))
             .filter((v): v is number => v != null)
             .map((deg) => ((deg % 360) + 360) % 360)
         )
@@ -872,7 +879,8 @@ export default function MapPage() {
       const spanFromAngles = (arr: number[]) => {
         if (arr.length < 2) return 0;
         let maxGap = 0;
-        for (let i = 0; i < arr.length - 1; i++) maxGap = Math.max(maxGap, arr[i + 1] - arr[i]);
+        for (let i = 0; i < arr.length - 1; i++)
+          maxGap = Math.max(maxGap, arr[i + 1] - arr[i]);
         maxGap = Math.max(maxGap, 2 * Math.PI - (arr[arr.length - 1] - arr[0]));
         return 2 * Math.PI - maxGap; // covered arc
       };
@@ -1473,7 +1481,7 @@ export default function MapPage() {
       <div>
         <h3 className="font-semibold mb-3">Hazard Overlays</h3>
         <div className="space-y-3 text-xs">
-          <div className="flex items-center justify-between">
+          {/* <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-blue-500/60" />
               <span>FEMA Flood Zones</span>
@@ -1483,7 +1491,7 @@ export default function MapPage() {
               onCheckedChange={() => toggleLayer("flood")}
               className="h-4 w-4"
             />
-          </div>
+          </div> */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-orange-500/50" />
@@ -1539,7 +1547,10 @@ export default function MapPage() {
   );
 
   // Display-scaled area and population/density (scale area by 100x per UI request)
-  const displayAreaM2 = useMemo(() => (areaInfo ? areaInfo.m2 * 100 : null), [areaInfo]);
+  const displayAreaM2 = useMemo(
+    () => (areaInfo ? areaInfo.m2 * 100 : null),
+    [areaInfo]
+  );
   const baseDensityKm2 = useMemo(() => {
     if (popDensity != null) return popDensity;
     if (popTotal != null && areaInfo) {
@@ -1626,10 +1637,10 @@ export default function MapPage() {
                 peopleRisk < 0.2
                   ? "text-emerald-300"
                   : peopleRisk < 0.4
-                  ? "text-yellow-300"
-                  : peopleRisk < 0.7
-                  ? "text-orange-300"
-                  : "text-red-300"
+                    ? "text-yellow-300"
+                    : peopleRisk < 0.7
+                      ? "text-orange-300"
+                      : "text-red-300"
               }`}
             >
               {peopleRiskLabel}
@@ -1641,10 +1652,10 @@ export default function MapPage() {
                 peopleRisk < 0.2
                   ? "bg-emerald-400/80"
                   : peopleRisk < 0.4
-                  ? "bg-yellow-400/80"
-                  : peopleRisk < 0.7
-                  ? "bg-orange-400/80"
-                  : "bg-red-500/80"
+                    ? "bg-yellow-400/80"
+                    : peopleRisk < 0.7
+                      ? "bg-orange-400/80"
+                      : "bg-red-500/80"
               }`}
               style={{ width: `${Math.round((peopleRisk || 0) * 100)}%` }}
             />
@@ -1652,7 +1663,9 @@ export default function MapPage() {
           <div className="mt-2 grid grid-cols-4 gap-2 text-[10px] text-white/60">
             <div>
               <div>Hazard</div>
-              <div className="font-mono text-white/85">{hazardComposite.toFixed(2)}</div>
+              <div className="font-mono text-white/85">
+                {hazardComposite.toFixed(2)}
+              </div>
             </div>
             <div>
               <div>Exposure</div>
