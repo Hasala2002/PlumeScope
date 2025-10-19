@@ -16,12 +16,12 @@ function parseWeights(q: any): Weights {
     flood: toNum(q.wF, defaultWeights.flood),
     heat: toNum(q.wH, defaultWeights.heat),
     drought: toNum(q.wD, defaultWeights.drought),
-    proximity: toNum(q.wP, defaultWeights.proximity),
+    people_risk: toNum(q.wP, defaultWeights.people_risk),
   };
 }
 
 function weightsKey(weights: Weights): string {
-  return `${weights.emissions}_${weights.flood}_${weights.heat}_${weights.drought}_${weights.proximity}`;
+  return `${weights.emissions}_${weights.flood}_${weights.heat}_${weights.drought}_${weights.people_risk}`;
 }
 
 geo.get("/sites", (_req, res) => {
@@ -67,7 +67,8 @@ geo.get("/score", (req, res) => {
         EmissionsScore: Number(s.EmissionsScore.toFixed(3)),
         FloodScore: Number(s.FloodScore.toFixed(3)),
         HeatScore: Number(s.HeatScore.toFixed(3)),
-        DroughtScore: Number(s.DroughtScore.toFixed(3))
+        DroughtScore: Number(s.DroughtScore.toFixed(3)),
+        PeopleRiskScore: Number(s.PeopleRiskScore.toFixed(3))
       }
     }))
   };

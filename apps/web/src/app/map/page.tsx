@@ -923,6 +923,7 @@ export default function MapPage() {
         geojson: feature,
         area_m2: finalArea.m2,
         year: 2020,
+        siteId: plumeSite?.id,
       });
       console.log("[pop] API response:", res);
       if ("queued" in res.data) {
@@ -1631,7 +1632,7 @@ export default function MapPage() {
       {areaInfo && (
         <div className="rounded-md bg-white/5 p-3">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-white/70">People Risk</div>
+            <div className="text-xs text-white/70">Harm Index</div>
             <div
               className={`text-xs font-medium ${
                 peopleRisk < 0.2

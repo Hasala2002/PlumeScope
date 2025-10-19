@@ -8,6 +8,10 @@ export type Site = {
   lon: number;
   CO2e_tpy: number;
   CH4_tpy: number;
+  // Population density data for people risk calculation
+  population_density_km2?: number;
+  total_population_affected?: number;
+  affected_area_km2?: number;
 };
 
 export type ScoredSite = Site & {
@@ -15,6 +19,7 @@ export type ScoredSite = Site & {
   FloodScore: number;
   HeatScore: number;
   DroughtScore: number;
+  PeopleRiskScore: number; // Replaces proximity score with density-aware people risk
   Risk: number;
 };
 
@@ -30,12 +35,14 @@ export type Weights = {
   flood: number;
   heat: number;
   drought: number;
-  proximity: number;
+  people_risk: number; // Renamed from proximity to better reflect density-based people risk
 };
 
 export type Maxes = {
   maxCO2: number;
   maxCH4: number;
+  maxPopulationDensity: number;
+  maxTotalPopulation: number;
 };
 
 export type Mitigation = {

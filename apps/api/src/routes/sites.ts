@@ -38,7 +38,7 @@ sites.get("/:id/score", async (req, res) => {
   if (!site) return res.status(404).json({ error: "NOT_FOUND" });
 
   const maxes = computeMaxes(all);
-  const emissionsOnly = scoreEmissionsOnly(site, maxes, { emissions: 1, flood: 0, heat: 0, drought: 0, proximity: 0 });
+  const emissionsOnly = scoreEmissionsOnly(site, maxes, { emissions: 1, flood: 0, heat: 0, drought: 0, people_risk: 0 });
 
   const enr = await enrichSite(site);
 

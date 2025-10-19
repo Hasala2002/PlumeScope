@@ -4,18 +4,55 @@ export function norm(x: number, max: number): number {
   return max > 0 ? Math.min(1, x / max) : 0;
 }
 
+/**
+ * Calculate people risk score based on population density and total population affected.
+ * High-density areas have amplified risk due to:
+ * - Physical layout concentrating pollution effects
+ * - More people in smaller areas increasing exposure concentration
+ * - Infrastructure that can trap and worsen pollution
+ */
+export function calculatePeopleRiskScore(
+  site: Site,
+  maxes: Maxes
+): number {
+  const density = site.population_density_km2 || 0;
+  const totalPop = site.total_population_affected || 0;
+  
+  if (density === 0 && totalPop === 0) return 0;
+  
+  // Normalize population metrics
+  const normalizedDensity = norm(density, maxes.maxPopulationDensity);
+  const normalizedPopulation = norm(totalPop, maxes.maxTotalPopulation);
+  
+  // Density amplification factor - higher density areas have disproportionately higher risk
+  let densityMultiplier = 1.0;
+  if (density > 2000) densityMultiplier = 2.0;      // Very high density
+  else if (density > 500) densityMultiplier = 1.5;  // High density
+  else if (density > 100) densityMultiplier = 1.2;  // Medium density
+  // Low density (<=100) keeps multiplier at 1.0
+  
+  // Base risk combines normalized density and population
+  // Weight density more heavily as it represents concentration effects
+  const baseRisk = 0.7 * normalizedDensity + 0.3 * normalizedPopulation;
+  
+  // Apply density amplification
+  return Math.min(1.0, baseRisk * densityMultiplier);
+}
+
 export const defaultWeights: Weights = {
   emissions: 0.7,
   flood: 0,
   heat: 0,
   drought: 0,
-  proximity: 0.3,
+  people_risk: 0.3, // Updated from proximity to people_risk
 };
 
 export function computeMaxes(sites: Site[]): Maxes {
   const maxCO2 = sites.length ? Math.max(...sites.map((s) => s.CO2e_tpy)) : 0;
   const maxCH4 = sites.length ? Math.max(...sites.map((s) => s.CH4_tpy)) : 0;
-  return { maxCO2, maxCH4 };
+  const maxPopulationDensity = sites.length ? Math.max(...sites.map((s) => s.population_density_km2 || 0)) : 0;
+  const maxTotalPopulation = sites.length ? Math.max(...sites.map((s) => s.total_population_affected || 0)) : 0;
+  return { maxCO2, maxCH4, maxPopulationDensity, maxTotalPopulation };
 }
 
 export function scoreEmissionsOnly(
@@ -27,14 +64,14 @@ export function scoreEmissionsOnly(
   const FloodScore = 0;
   const HeatScore = 0;
   const DroughtScore = 0;
-  const proximityScore = 0; // placeholder until implemented
+  const PeopleRiskScore = calculatePeopleRiskScore(site, maxes);
 
   const Risk =
     weights.emissions * EmissionsScore +
     weights.flood * FloodScore +
     weights.heat * HeatScore +
     weights.drought * DroughtScore +
-    weights.proximity * proximityScore;
+    weights.people_risk * PeopleRiskScore;
 
   return {
     ...site,
@@ -42,6 +79,7 @@ export function scoreEmissionsOnly(
     FloodScore,
     HeatScore,
     DroughtScore,
+    PeopleRiskScore,
     Risk,
   };
 }
@@ -88,14 +126,14 @@ export function scoreFused(
   const FloodScore = hazard.flood;
   const HeatScore = hazard.heat;
   const DroughtScore = hazard.drought;
-  const proximityScore = 0; // placeholder until implemented
+  const PeopleRiskScore = calculatePeopleRiskScore(site, maxes);
 
   const Risk =
     weights.emissions * EmissionsScore +
     weights.flood * FloodScore +
     weights.heat * HeatScore +
     weights.drought * DroughtScore +
-    weights.proximity * proximityScore;
+    weights.people_risk * PeopleRiskScore;
 
   return {
     ...site,
@@ -103,6 +141,7 @@ export function scoreFused(
     FloodScore,
     HeatScore,
     DroughtScore,
+    PeopleRiskScore,
     Risk,
   };
 }

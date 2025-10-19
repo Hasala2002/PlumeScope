@@ -11,17 +11,20 @@ export function simpleRisk(sites: any[]) {
       const FloodScore = 0.4; // placeholder until hazard lookups wired
       const HeatScore = 0.5;
       const DroughtScore = 0.3;
+      const PeopleRiskScore = 0.2; // placeholder for simple risk - would need population data integration
       const Risk =
         0.35 * EmissionsScore +
-        0.35 * FloodScore +
+        0.25 * FloodScore +
         0.2 * HeatScore +
-        0.1 * DroughtScore;
+        0.1 * DroughtScore +
+        0.1 * PeopleRiskScore;
       return {
         ...s,
         EmissionsScore,
         FloodScore,
         HeatScore,
         DroughtScore,
+        PeopleRiskScore,
         Risk,
       };
     })

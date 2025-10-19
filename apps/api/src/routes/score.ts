@@ -11,7 +11,7 @@ function parseWeights(q: any): Weights {
     flood: toNum(q.wF, defaultWeights.flood),
     heat: toNum(q.wH, defaultWeights.heat),
     drought: toNum(q.wD, defaultWeights.drought),
-    proximity: toNum(q.wP, defaultWeights.proximity),
+    people_risk: toNum(q.wP, defaultWeights.people_risk), // Support legacy 'wP' param for people risk
   };
 }
 

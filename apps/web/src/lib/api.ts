@@ -19,6 +19,7 @@ export async function postPopulationEstimate(body: {
   area_m2: number;
   year?: number;
   dataset?: "wpgppop" | "wpgpas";
+  siteId?: string;
 }): Promise<{ data: PopulationEstimate | PopulationQueued; status: number }> {
   const res = await api.post<PopulationEstimate | PopulationQueued>(
     "/population/estimate",
