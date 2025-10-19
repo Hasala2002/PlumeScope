@@ -11,6 +11,8 @@ import { miniClimate } from "./routes/miniClimate.js";
 import { geo } from "./routes/geo.js";
 import { twin } from "./routes/twin.js";
 import { population } from "./routes/population.js";
+import { admin } from "./routes/admin.js";
+import { threshold } from "./routes/threshold.js";
 
 const app = express();
 app.use(cors());
@@ -26,6 +28,8 @@ app.use("/mini-climate", miniClimate);
 app.use("/geo", geo);
 app.use("/twin", twin);
 app.use("/population", population);
+app.use("/admin", admin);
+app.use("/threshold", threshold);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.listen(PORT, () => console.log(`[api] listening on :${PORT}`));

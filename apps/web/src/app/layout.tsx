@@ -2,9 +2,9 @@
 
 import "./globals.css";
 import Link from "next/link";
-import type { Metadata } from "next";
 import { Providers } from "./providers";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   Home,
   Map as MapIcon,
@@ -43,6 +43,32 @@ export default function RootLayout({
     // { href: "/mini-climate", label: "Mini-Climate", icon: Thermometer },
   ];
 
+  const pathname = usePathname();
+
+  const getTitleFromPath = (path: string) => {
+    const map: Record<string, string> = {
+      "/": "Home",
+      "/map": "Map",
+      "/sites": "Sites",
+      "/analytics": "Analytics",
+      "/optimize": "Optimize",
+      "/admin": "Admin",
+      "/mini-climate": "Mini-Climate",
+    };
+    if (map[path]) return map[path];
+    const seg = path.split("/").filter(Boolean).pop() || "Home";
+    return seg.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const siteName = "PlumeScope";
+  const pageTitle = `${getTitleFromPath(pathname)} | ${siteName}`;
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.title = pageTitle;
+    }
+  }, [pageTitle]);
+
   return (
     <html lang="en">
       <head>
@@ -68,6 +94,7 @@ export default function RootLayout({
           href="/favicon-16x16.png"
         ></link>
         <link rel="manifest" href="/site.webmanifest"></link>
+        <title>PlumeScope</title>
       </head>
       <body>
         <Providers>

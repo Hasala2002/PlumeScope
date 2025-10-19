@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +36,8 @@ import {
   buildOverlayDataURL,
   meterOffsetsToLngLat,
   buildAffectedPolygon,
+  polygonAreaMetersFromLngLat,
+  hasBit,
   type Frame as AFrame,
 } from "@/lib/affected-area";
 
@@ -101,6 +109,9 @@ export default function MapPage() {
     cells: number;
   }>(null);
   const [affectedOpacity, setAffectedOpacity] = useState<number>(0.8);
+  const [lastAffectedHalf, setLastAffectedHalf] = useState<number | null>(null);
+  const [aqImpactPct, setAqImpactPct] = useState<number | null>(null);
+  const [sectorAreaM2, setSectorAreaM2] = useState<number | null>(null);
 
   // Population estimate state
   const [popTotal, setPopTotal] = useState<number | null>(null);
@@ -523,54 +534,39 @@ export default function MapPage() {
     })();
   }, []);
 
-  // Visibility toggles
+  // Visibility toggles (robust to style/layer readiness)
   useEffect(() => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
-    try {
-      if (map.current.getLayer("fema-layer")) {
-        map.current.setLayoutProperty(
-          "fema-layer",
-          "visibility",
-          layerVisibility.flood ? "visible" : "none"
-        );
-      }
-      if (map.current.getLayer("usdm-layer")) {
-        map.current.setLayoutProperty(
-          "usdm-layer",
-          "visibility",
-          layerVisibility.drought ? "visible" : "none"
-        );
-      }
-      if (map.current.getLayer("heatrisk-layer")) {
-        map.current.setLayoutProperty(
-          "heatrisk-layer",
-          "visibility",
-          layerVisibility.heat ? "visible" : "none"
-        );
-      }
-    } catch (err) {
-      console.warn("Error updating layer visibility:", err);
-    }
+    if (!map.current) return;
+
+    const m = map.current;
+    const setLayerVisible = (layerId: string, visible: boolean) => {
+      const apply = () => {
+        if (!m.getLayer(layerId)) {
+          // Try again on next idle once layer exists
+          m.once("idle", apply);
+          return;
+        }
+        try {
+          m.setLayoutProperty(
+            layerId,
+            "visibility",
+            visible ? "visible" : "none"
+          );
+        } catch (err) {
+          console.warn(`Error updating visibility for ${layerId}:`, err);
+        }
+      };
+      apply();
+    };
+
+    setLayerVisible("fema-layer", !!layerVisibility.flood);
+    setLayerVisible("usdm-layer", !!layerVisibility.drought);
+    setLayerVisible("heatrisk-layer", !!layerVisibility.heat);
   }, [layerVisibility]);
 
   const toggleLayer = (key: keyof LV) => {
+    // Single source of truth: update state; effect will sync map when ready
     setLayerVisibility((s) => ({ ...s, [key]: !s[key] }));
-    if (map.current && map.current.isStyleLoaded()) {
-      const layerId =
-        key === "flood"
-          ? "fema-layer"
-          : key === "drought"
-            ? "usdm-layer"
-            : "heatrisk-layer";
-      if (map.current.getLayer(layerId)) {
-        try {
-          const newVisibility = !layerVisibility[key] ? "visible" : "none";
-          map.current.setLayoutProperty(layerId, "visibility", newVisibility);
-        } catch (err) {
-          console.warn(`Error toggling ${layerId}:`, err);
-        }
-      }
-    }
   };
 
   const updateMapData = (newWeights: Weights) => {
@@ -712,9 +708,55 @@ export default function MapPage() {
     console.log(
       `[recomputeAffected] Calculated area: ${a.m2} m² (${a.cells} cells)`
     );
+    // Keep cell-based area available, but prefer polygon-based for display
     setAreaInfo(a);
     const url = buildOverlayDataURL(occ, affectedAgg);
     updateAffectedOverlay(url, occ.half);
+    setLastAffectedHalf(occ.half);
+
+    // Compute AQ impact percentage using newest frame over affected area
+    try {
+      const newest = frames[0];
+      if (newest) {
+        const denom = (scaleMode === "absolute" && (scaleMax ?? 0) > 0)
+          ? Math.max(scaleMax as number, newest.meta.maxC)
+          : newest.meta.maxC;
+        const thrC = thrMode === "relative" ? thrRelAlpha * newest.meta.maxC : thrAbs;
+        const { n, cell, half, dir } = newest.meta;
+        const theta = (dir * Math.PI) / 180;
+        const cos = Math.cos(theta), sin = Math.sin(theta);
+        const toOcc = (x:number, y:number) => {
+          const xe = x * cos - y * sin;
+          const yn = x * sin + y * cos;
+          if (Math.abs(xe) > occ.half || Math.abs(yn) > occ.half) return -1;
+          const cx = Math.round((xe + occ.half) / occ.res);
+          const cy = Math.round((occ.half - yn) / occ.res);
+          if (cx < 0 || cy < 0 || cx >= occ.dim || cy >= occ.dim) return -1;
+          return cy * occ.dim + cx;
+        };
+        let sum = 0, count = 0;
+        for (let j = 0; j < n; j++) {
+          const row = newest.grid[j];
+          for (let i = 0; i < n; i++) {
+            const C = row[i];
+            if (C < thrC || denom <= 0) continue;
+            const x = -half + i * cell;
+            const y = half - j * cell;
+            const idx = toOcc(x, y);
+            if (idx >= 0 && hasBit(occ.unionBits, idx)) {
+              sum += C / denom;
+              count++;
+            }
+          }
+        }
+        const avg = count > 0 ? Math.min(1, Math.max(0, sum / count)) : 0;
+        setAqImpactPct(Math.round(avg * 100));
+      } else {
+        setAqImpactPct(null);
+      }
+    } catch {
+      setAqImpactPct(null);
+    }
 
     // Build polygon and maybe call population API (throttled)
     let feature = buildAffectedPolygon(occ, {
@@ -769,6 +811,7 @@ export default function MapPage() {
             setAreaInfo(fallbackArea);
             const fallbackUrl = buildOverlayDataURL(fallbackOcc, affectedAgg);
             updateAffectedOverlay(fallbackUrl, fallbackOcc.half);
+            setLastAffectedHalf(fallbackOcc.half);
             break;
           }
         }
@@ -784,6 +827,65 @@ export default function MapPage() {
       lastPopRef.current = null; // Clear cache when no polygon available
       return;
     }
+
+    // Use polygon-based geodesic area for display to avoid grid/threshold artifacts
+    try {
+      const ring = feature.geometry.coordinates[0] as [number, number][];
+      const m2poly = polygonAreaMetersFromLngLat(ring, { lat: plumeSite.lat, lon: plumeSite.lon });
+      setAreaInfo({
+        m2: m2poly,
+        ft2: m2poly * 10.7639,
+        mi2: m2poly / 2_589_988.11,
+        cells: a.cells,
+      });
+
+      // Sector-area estimate over 24h using arc span and max radius from ring
+      const Rloc = 6378137; // meters
+      const cosLat = Math.cos((plumeSite.lat * Math.PI) / 180);
+      const toMeters = (lng: number, lat: number) => {
+        const dx = (lng - plumeSite.lon) * (Math.PI / 180) * Rloc * cosLat;
+        const dy = (lat - plumeSite.lat) * (Math.PI / 180) * Rloc;
+        return { x: dx, y: dy };
+      };
+      let rMax = 0;
+      const ringAngles: number[] = [];
+      for (const [lng, lat] of ring) {
+        const { x, y } = toMeters(lng, lat);
+        const r = Math.hypot(x, y);
+        if (r > rMax) rMax = r;
+        // angle from site to ring point
+        const ang = Math.atan2(y, x);
+        ringAngles.push((ang + 2 * Math.PI) % (2 * Math.PI));
+      }
+      // Angle span from frames (circular)
+      const angles = Array.from(
+        new Set(
+          iterFramesNewestFirst()
+            .map((f) => (typeof f?.meta?.dir === 'number' ? f.meta.dir : null))
+            .filter((v): v is number => v != null)
+            .map((deg) => ((deg % 360) + 360) % 360)
+        )
+      )
+        .map((deg) => (deg * Math.PI) / 180)
+        .sort((a, b) => a - b);
+
+      const spanFromAngles = (arr: number[]) => {
+        if (arr.length < 2) return 0;
+        let maxGap = 0;
+        for (let i = 0; i < arr.length - 1; i++) maxGap = Math.max(maxGap, arr[i + 1] - arr[i]);
+        maxGap = Math.max(maxGap, 2 * Math.PI - (arr[arr.length - 1] - arr[0]));
+        return 2 * Math.PI - maxGap; // covered arc
+      };
+
+      const thetaFrames = spanFromAngles(angles);
+      const thetaRing = spanFromAngles(ringAngles.sort((a, b) => a - b));
+      let theta = Math.max(thetaFrames, thetaRing);
+      // ignore tiny spans/noisy degenerate arcs
+      if (!isFinite(theta) || theta < (5 * Math.PI) / 180) theta = 0; // <5° -> treat as 0
+
+      const sectorM2 = theta > 0 && rMax > 0 ? 0.5 * theta * rMax * rMax : NaN;
+      setSectorAreaM2(Number.isFinite(sectorM2) ? sectorM2 : null);
+    } catch {}
     const coordsStr = JSON.stringify(feature.geometry.coordinates);
     const key = fnv1aHex(coordsStr);
     const last = lastPopRef.current;
@@ -1190,6 +1292,89 @@ export default function MapPage() {
     return { px, py, x, y };
   };
 
+  // Fetch hazard scores for selected site (from /score/live)
+  const [siteScores, setSiteScores] = useState<null | {
+    id: string;
+    EmissionsScore: number;
+    FloodScore: number;
+    HeatScore: number;
+    DroughtScore: number;
+    Risk?: number;
+  }>(null);
+  useEffect(() => {
+    if (!plumeSite?.id) {
+      setSiteScores(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<{
+          items: Array<{
+            id: string;
+            EmissionsScore: number;
+            FloodScore: number;
+            HeatScore: number;
+            DroughtScore: number;
+            Risk?: number;
+          }>;
+        }>("/score/live");
+        if (cancelled) return;
+        const s = data.items.find(
+          (it) => String(it.id) === String(plumeSite.id)
+        );
+        setSiteScores(s ?? null);
+      } catch {
+        if (!cancelled) setSiteScores(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [plumeSite?.id]);
+
+  // Derived People Risk
+  const coverageFrac = useMemo(() => {
+    if (!areaInfo || !lastAffectedHalf || lastAffectedHalf <= 0) return 0;
+    const bboxArea = 4 * lastAffectedHalf * lastAffectedHalf; // m^2 of square extent
+    return Math.max(0, Math.min(1, areaInfo.m2 / Math.max(1, bboxArea)));
+  }, [areaInfo, lastAffectedHalf]);
+
+  const hazardComposite = useMemo(() => {
+    const e = siteScores?.EmissionsScore ?? 0.5;
+    const f = siteScores?.FloodScore ?? 0.5;
+    const h = siteScores?.HeatScore ?? 0.5;
+    const d = siteScores?.DroughtScore ?? 0.5;
+    const wE = weights.emissions;
+    const wF = weights.flood;
+    const wH = weights.heat;
+    const wD = weights.drought;
+    const sum = wE + wF + wH + wD || 1;
+    return (wE * e + wF * f + wH * h + wD * d) / sum;
+  }, [siteScores, weights]);
+
+  const densityNorm = useMemo(() => {
+    if (popDensity == null) return 0;
+    return Math.max(0, Math.min(1, popDensity / 5000)); // 5k ppl/km² cap
+  }, [popDensity]);
+
+  const exposureFactor = useMemo(() => Math.sqrt(coverageFrac), [coverageFrac]);
+
+  const peopleRisk = useMemo(() => {
+    const ef = 0.4 + 0.6 * exposureFactor; // 0.4..1.0
+    const df = 0.4 + 0.6 * densityNorm; // 0.4..1.0
+    const r = hazardComposite * ef * df;
+    return Math.max(0, Math.min(1, r));
+  }, [hazardComposite, exposureFactor, densityNorm]);
+
+  const peopleRiskLabel = useMemo(() => {
+    const r = peopleRisk;
+    if (r < 0.2) return "Low";
+    if (r < 0.4) return "Moderate";
+    if (r < 0.7) return "High";
+    return "Critical";
+  }, [peopleRisk]);
+
   // SSE for twin mode
   useEffect(() => {
     if (mode !== "twin" || !plumeSite) {
@@ -1326,10 +1511,63 @@ export default function MapPage() {
     </div>
   );
 
+  // Helper component for a single statistic
+  const StatBlock: React.FC<{
+    label: React.ReactNode;
+    value?: React.ReactNode;
+    subtext?: React.ReactNode;
+    loading?: boolean;
+    children?: React.ReactNode;
+  }> = ({ label, value, subtext, loading = false, children }) => (
+    <div className="space-y-0.5">
+      {/* Label (e.g., "Area") */}
+      <label className="text-xs uppercase tracking-wider text-white/70">
+        {label}
+      </label>
+
+      {/* Value (e.g., "1,234 mi²") */}
+      {loading ? (
+        <div className="text-xl font-semibold">…</div>
+      ) : (
+        <div className="text-xl font-semibold">{value ?? "—"}</div>
+      )}
+
+      {/* Subtext (e.g., "ppl/km²" or the refresh button) */}
+      <div className="text-[11px] text-white/50 h-4">{subtext}</div>
+      {children}
+    </div>
+  );
+
+  // Display-scaled area and population/density (scale area by 100x per UI request)
+  const displayAreaM2 = useMemo(() => (areaInfo ? areaInfo.m2 * 100 : null), [areaInfo]);
+  const baseDensityKm2 = useMemo(() => {
+    if (popDensity != null) return popDensity;
+    if (popTotal != null && areaInfo) {
+      const km2 = areaInfo.m2 / 1_000_000;
+      return km2 > 0 ? popTotal / km2 : null;
+    }
+    return null;
+  }, [popDensity, popTotal, areaInfo]);
+  const displayPop = useMemo(() => {
+    if (baseDensityKm2 != null && displayAreaM2 != null) {
+      const km2 = displayAreaM2 / 1_000_000;
+      return Math.round(baseDensityKm2 * km2);
+    }
+    if (popTotal != null) return popTotal;
+    return null;
+  }, [baseDensityKm2, displayAreaM2, popTotal]);
+  const displayDensityMi2 = useMemo(() => {
+    if (baseDensityKm2 != null) return baseDensityKm2 * 2.58998811; // ppl/mi^2
+    return null;
+  }, [baseDensityKm2]);
+
   const AffectedPanel = () => (
-    <div className="space-y-2">
+    <div className="space-y-4">
+      {" "}
+      {/* Increased spacing between sections */}
+      {/* Section 1: Master Toggle */}
       <div className="flex items-center justify-between">
-        <label className="text-xs flex items-center gap-2">
+        <label className="text-sm flex items-center gap-2 font-medium">
           <Checkbox
             checked={showAffected}
             onCheckedChange={() => setShowAffected((v) => !v)}
@@ -1337,171 +1575,238 @@ export default function MapPage() {
           />{" "}
           Show Affected Area (24h)
         </label>
-        {areaInfo && (
-          <div className="text-[11px] text-white/70 space-y-0.5">
+      </div>
+      {/* Section 2: Hero Stats Block (Now the most prominent part) */}
+      {areaInfo && (
+        <div className="grid grid-cols-3 gap-4 py-3 px-2 rounded-md bg-white/5">
+          <StatBlock
+            label="Area"
+            value={`${(areaInfo.mi2 * 100).toFixed(2)} mi²`}
+            subtext={`Base: ${areaInfo.mi2.toFixed(2)} mi²`}
+          />
+          <StatBlock
+            label="People (24h)"
+            value={displayPop != null ? displayPop.toLocaleString() : null}
+            subtext="Scaled from base WorldPop"
+            loading={popLoading}
+          />
+          <StatBlock
+            label="Pop. Density (ppl/mi²)"
+            value={
+              displayDensityMi2 != null
+                ? Math.round(displayDensityMi2).toLocaleString()
+                : null
+            }
+            subtext="Scaled from base"
+            loading={popLoading}
+          >
+            {/* Refresh button now neatly placed within its stat block */}
+            {popTotal == null && popDensity == null && !popLoading && (
+              <button
+                onClick={() => {
+                  lastPopRef.current = null;
+                  recomputeAffected();
+                }}
+                className="mt-1 text-[10px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
+                title="Force refresh population data"
+              >
+                Refresh
+              </button>
+            )}
+          </StatBlock>
+        </div>
+      )}
+      {/* People Risk summary */}
+      {areaInfo && (
+        <div className="rounded-md bg-white/5 p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-white/70">People Risk</div>
+            <div
+              className={`text-xs font-medium ${
+                peopleRisk < 0.2
+                  ? "text-emerald-300"
+                  : peopleRisk < 0.4
+                  ? "text-yellow-300"
+                  : peopleRisk < 0.7
+                  ? "text-orange-300"
+                  : "text-red-300"
+              }`}
+            >
+              {peopleRiskLabel}
+            </div>
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full ${
+                peopleRisk < 0.2
+                  ? "bg-emerald-400/80"
+                  : peopleRisk < 0.4
+                  ? "bg-yellow-400/80"
+                  : peopleRisk < 0.7
+                  ? "bg-orange-400/80"
+                  : "bg-red-500/80"
+              }`}
+              style={{ width: `${Math.round((peopleRisk || 0) * 100)}%` }}
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-2 text-[10px] text-white/60">
             <div>
-              {Math.round(areaInfo.ft2).toLocaleString()} ft² •{" "}
-              {areaInfo.mi2.toFixed(2)} mi²
+              <div>Hazard</div>
+              <div className="font-mono text-white/85">{hazardComposite.toFixed(2)}</div>
             </div>
-            <div className="flex gap-3">
-              <span>
-                People (24h):{" "}
-                {popLoading
-                  ? "…"
-                  : popTotal != null
-                    ? popTotal.toLocaleString()
-                    : "—"}
-              </span>
-              <span>
-                Pop. density:{" "}
-                {popLoading
-                  ? "…"
-                  : popDensity != null
-                    ? Math.round(popDensity).toLocaleString()
-                    : "—"}{" "}
-                ppl/km²
-                {popTotal == null && popDensity == null && (
-                  <button
-                    onClick={() => {
-                      lastPopRef.current = null;
-                      recomputeAffected();
-                    }}
-                    className="ml-2 text-[10px] bg-white/10 hover:bg-white/20 px-1 py-0.5 rounded transition-colors"
-                    title="Force refresh population data"
-                  >
-                    Refresh
-                  </button>
-                )}
-              </span>
+            <div>
+              <div>Exposure</div>
+              <div className="font-mono text-white/85">
+                {coverageFrac > 0 ? exposureFactor.toFixed(2) : "—"}
+              </div>
             </div>
-            <div className="text-[10px] text-white/50">
-              WorldPop 2020 (100 m)
+            <div>
+              <div>Density</div>
+              <div className="font-mono text-white/85">
+                {popDensity != null ? densityNorm.toFixed(2) : "—"}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <label className="text-xs">Aggregation</label>
-          <Select
-            value={affectedAgg}
-            onValueChange={(v: string) =>
-              setAffectedAgg(v as "union" | "exposure")
-            }
-          >
-            <SelectTrigger className="h-8 bg-white/10 border-white/20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="union">Union (any exceed)</SelectItem>
-              <SelectItem value="exposure">Exposure (hours ≥ thr)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs">Resolution (m)</label>
-          <Select
-            value={String(occRes)}
-            onValueChange={(v: string) => setOccRes(Number(v))}
-          >
-            <SelectTrigger className="h-8 bg-white/10 border-white/20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-              <SelectItem value="200">200</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <label className="text-xs">Threshold mode</label>
-          <Select
-            value={thrMode}
-            onValueChange={(v: string) =>
-              setThrMode(v as "relative" | "absolute")
-            }
-          >
-            <SelectTrigger className="h-8 bg-white/10 border-white/20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="relative">
-                Relative (% of frame max)
-              </SelectItem>
-              <SelectItem value="absolute">Absolute</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {thrMode === "relative" ? (
-          <div className="space-y-1">
-            <label className="text-xs">
-              Relative α ({Math.round(thrRelAlpha * 100)}%)
-            </label>
-            <Slider
-              value={[thrRelAlpha]}
-              min={0.01}
-              max={0.2}
-              step={0.01}
-              onValueChange={([v]) => setThrRelAlpha(v)}
-            />
-          </div>
-        ) : (
-          <div className="space-y-1">
-            <label className="text-xs">Absolute C_thr</label>
-            <Input
-              type="number"
-              value={thrAbs}
-              onChange={(e) => setThrAbs(Number(e.target.value) || 0)}
-              className="h-8 bg-white/10 border-white/20"
-            />
-          </div>
-        )}
-      </div>
-      <div className="space-y-1">
-        <label className="text-xs">Affected opacity</label>
-        <Slider
-          value={[affectedOpacity]}
-          min={0.1}
-          max={1}
-          step={0.05}
-          onValueChange={([v]) => setAffectedOpacity(v)}
-        />
-      </div>
-
-      {affectedAgg === "exposure" && (
-        <div className="space-y-1">
-          <div className="text-[11px] text-white/70">
-            Exposure legend (hours ≥ threshold)
-          </div>
-          <svg viewBox="0 0 100 8" className="w-full h-2 rounded">
-            <defs>
-              <linearGradient id="alpha-grad" x1="0%" x2="100%" y1="0%" y2="0%">
-                <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-                <stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
-              </linearGradient>
-            </defs>
-            <rect
-              x="0"
-              y="0"
-              width="100"
-              height="8"
-              fill="url(#alpha-grad)"
-              rx="1"
-            />
-          </svg>
-          <div className="flex justify-between text-[10px] text-white/60">
-            {[0, 4, 8, 12, 16, 20, 24].map((v) => (
-              <span key={v}>{v}</span>
-            ))}
+            <div>
+              <div>AQ Impact</div>
+              <div className="font-mono text-white/85">
+                {aqImpactPct != null ? `${aqImpactPct}%` : "—"}
+              </div>
+            </div>
           </div>
         </div>
       )}
+      {/* Section 3: Configuration Controls */}
+      <div className="space-y-3 pt-3 border-t border-white/15">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className="text-xs">Aggregation</label>
+            <Select
+              value={affectedAgg}
+              onValueChange={(v: string) =>
+                setAffectedAgg(v as "union" | "exposure")
+              }
+            >
+              <SelectTrigger className="h-8 bg-white/10 border-white/20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="union">Union (any exceed)</SelectItem>
+                <SelectItem value="exposure">Exposure (hours ≥ thr)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs">Resolution (m)</label>
+            <Select
+              value={String(occRes)}
+              onValueChange={(v: string) => setOccRes(Number(v))}
+            >
+              <SelectTrigger className="h-8 bg-white/10 border-white/20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className="text-xs">Threshold mode</label>
+            <Select
+              value={thrMode}
+              onValueChange={(v: string) =>
+                setThrMode(v as "relative" | "absolute")
+              }
+            >
+              <SelectTrigger className="h-8 bg-white/10 border-white/20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="relative">
+                  Relative (% of frame max)
+                </SelectItem>
+                <SelectItem value="absolute">Absolute</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {thrMode === "relative" ? (
+            <div className="space-y-1">
+              <label className="text-xs">
+                Relative α ({Math.round(thrRelAlpha * 100)}%)
+              </label>
+              <Slider
+                value={[thrRelAlpha]}
+                min={0.01}
+                max={0.2}
+                step={0.01}
+                onValueChange={([v]) => setThrRelAlpha(v)}
+              />
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <label className="text-xs">Absolute C_thr</label>
+              <Input
+                type="number"
+                value={thrAbs}
+                onChange={(e) => setThrAbs(Number(e.target.value) || 0)}
+                className="h-8 bg-white/10 border-white/20"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs">Affected opacity</label>
+          <Slider
+            value={[affectedOpacity]}
+            min={0.1}
+            max={1}
+            step={0.05}
+            onValueChange={([v]) => setAffectedOpacity(v)}
+          />
+        </div>
+
+        {affectedAgg === "exposure" && (
+          <div className="space-y-1 pt-2">
+            <div className="text-[11px] text-white/70">
+              Exposure legend (hours ≥ threshold)
+            </div>
+            <svg viewBox="0 0 100 8" className="w-full h-2 rounded">
+              <defs>
+                <linearGradient
+                  id="alpha-grad"
+                  x1="0%"
+                  x2="100%"
+                  y1="0%"
+                  y2="0%"
+                >
+                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
+                  <stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
+                </linearGradient>
+              </defs>
+              <rect
+                x="0"
+                y="0"
+                width="100"
+                height="8"
+                fill="url(#alpha-grad)"
+                rx="1"
+              />
+            </svg>
+            <div className="flex justify-between text-[10px] text-white/60">
+              {[0, 4, 8, 12, 16, 20, 24].map((v) => (
+                <span key={v}>{v}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
-
   const WeightsPanel = () => (
     <div className="space-y-4">
       <h3 className="font-semibold">Risk Weights</h3>

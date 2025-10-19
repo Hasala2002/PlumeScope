@@ -268,3 +268,24 @@ function polygonRingArea(ring: [number, number][]): number {
   // Negative area means clockwise in this shoelace variant, reverse sign for CCW check
   return -area;
 }
+
+// Compute polygon area (in m^2) from a lon/lat ring using a local ENU approximation around `ref`.
+export function polygonAreaMetersFromLngLat(
+  ring: [number, number][],
+  ref: { lat: number; lon: number }
+): number {
+  const Rloc = R; // reuse Earth radius from above
+  const cosLat = Math.cos((ref.lat * Math.PI) / 180);
+  const toMeters = (lng: number, lat: number) => {
+    const dx = (lng - ref.lon) * (Math.PI / 180) * Rloc * cosLat;
+    const dy = (lat - ref.lat) * (Math.PI / 180) * Rloc;
+    return { x: dx, y: dy };
+  };
+  let area = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = toMeters(ring[i][0], ring[i][1]);
+    const b = toMeters(ring[j][0], ring[j][1]);
+    area += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(area) * 0.5;
+}
