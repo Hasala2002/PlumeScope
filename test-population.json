@@ -1,0 +1,11 @@
+{
+  "geojson": {
+    "type": "Feature",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [[[-99, 31], [-99, 32], [-98, 32], [-98, 31], [-99, 31]]]
+    }
+  },
+  "area_m2": 30000,
+  "year": 2020
+}

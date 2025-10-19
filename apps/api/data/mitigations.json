@@ -1,0 +1,32 @@
+﻿[
+  {
+    "id": "LDAR",
+    "label": "Leak Detection and Repair",
+    "cost": 150000,
+    "expectedDelta": { "emissions": 0.22, "flood": 0.0, "heat": 0.0, "drought": 0.0 }
+  },
+  {
+    "id": "FlareOpt",
+    "label": "Flare Optimization",
+    "cost": 180000,
+    "expectedDelta": { "emissions": 0.18, "flood": 0.0, "heat": 0.0, "drought": 0.0 }
+  },
+  {
+    "id": "ElectPump",
+    "label": "Electrify Pumps",
+    "cost": 300000,
+    "expectedDelta": { "emissions": 0.28, "flood": 0.0, "heat": 0.1, "drought": 0.0 }
+  },
+  {
+    "id": "FloodHard",
+    "label": "Flood Hardening",
+    "cost": 220000,
+    "expectedDelta": { "emissions": 0.0, "flood": 0.25, "heat": 0.0, "drought": 0.0 }
+  },
+  {
+    "id": "ShadeRetro",
+    "label": "Shade and Cool Roof Retrofits",
+    "cost": 120000,
+    "expectedDelta": { "emissions": 0.05, "flood": 0.0, "heat": 0.2, "drought": 0.0 }
+  }
+]

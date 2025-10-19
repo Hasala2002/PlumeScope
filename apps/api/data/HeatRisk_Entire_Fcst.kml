@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://earth.google.com/kml/2.0">
+	<Folder>
+		<name>NWS Experimental HeatRisk</name>
+		<open>1</open>
+		<NetworkLink>
+			<name>HeatRisk 1 Day Forecast</name>
+			<open>1</open>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day1_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+		<NetworkLink>
+			<name>HeatRisk 2 Day Forecast</name>
+			<open>0</open>
+			<visibility>0</visibility>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day2_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+		<NetworkLink>
+			<name>HeatRisk 3 Day Forecast</name>
+			<open>0</open>
+			<visibility>0</visibility>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day3_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+		<NetworkLink>
+			<name>HeatRisk 4 Day Forecast</name>
+			<open>0</open>
+			<visibility>0</visibility>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day4_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+		<NetworkLink>
+			<name>HeatRisk 5 Day Forecast</name>
+			<open>0</open>
+			<visibility>0</visibility>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day5_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+		<NetworkLink>
+			<name>HeatRisk 6 Day Forecast</name>
+			<open>0</open>
+			<visibility>0</visibility>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day6_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+		<NetworkLink>
+			<name>HeatRisk 7 Day Forecast</name>
+			<open>0</open>
+			<visibility>0</visibility>
+			<description>Auto-Updates Every Hour</description>
+			<Url>
+				<href>https://www.wpc.ncep.noaa.gov/heatrisk/data/HeatRisk_Day7_Fcst.kml</href>
+				<refreshMode>onInterval</refreshMode>
+				<refreshInterval>3600</refreshInterval>
+			</Url>
+		</NetworkLink>
+	</Folder>
+</kml>
