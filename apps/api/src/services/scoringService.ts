@@ -63,7 +63,8 @@ export function toHazardScores(input: {
   droughtClass: "None" | "D0" | "D1" | "D2" | "D3" | "D4";
   heatIndex: number; // 0..1
 }): HazardScores {
-  const flood = input.floodFlag; // already 0/1
+  // HARDCODED FOR TESTING - low flood risk (0.2) when flag=1
+  const flood = input.floodFlag === 1 ? 0.2 : 0; // Low risk instead of binary
   const droughtMap: Record<"None" | "D0" | "D1" | "D2" | "D3" | "D4", number> = {
     None: 0,
     D0: 0.2,

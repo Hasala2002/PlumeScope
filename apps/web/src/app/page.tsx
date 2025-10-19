@@ -39,6 +39,88 @@ async function fetchHealth(): Promise<HealthData> {
   }
 }
 
+function SmokeEmitter({ className = "" }: { className?: string }) {
+  // Deterministic offsets/durations so hydration stays clean
+  const puffs = Array.from({ length: 12 }, (_, i) => ({
+    delay: i * 0.6, // staggered starts
+    dur: 6 + (i % 5), // 6–10s drift up
+    dx: [-14, -8, -4, 0, 4, 8, 12, -10, -6, 2, 6, 10][i], // side drift
+    size: 12 + (i % 3) * 6, // 12/18/24 px puffs
+  }));
+
+  return (
+    <div
+      className={`pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 ${className}`}
+      aria-hidden
+    >
+      {puffs.map((p, i) => (
+        <span
+          key={i}
+          className="puff"
+          style={
+            {
+              "--delay": `${p.delay}s`,
+              "--dur": `${p.dur}s`,
+              "--dx": `${p.dx}px`,
+              "--size": `${p.size}px`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+
+      <style jsx>{`
+        .puff {
+          position: absolute;
+          bottom: -20%;
+          left: 50%;
+          width: var(--size);
+          height: var(--size);
+          border-radius: 9999px;
+          background: radial-gradient(
+            circle at 40% 40%,
+            rgba(255, 255, 255, 0.9) 0%,
+            rgba(255, 255, 255, 0.35) 40%,
+            rgba(255, 255, 255, 0) 70%
+          );
+          transform: translate(calc(-50% + var(--dx)), 0) scale(0.45);
+          opacity: 0;
+          filter: blur(2px);
+          animation: puff var(--dur) linear infinite;
+          animation-delay: var(--delay);
+          mix-blend-mode: screen; /* looks nice on dark bg */
+        }
+
+        @keyframes puff {
+          0% {
+            transform: translate(calc(-50% + var(--dx)), 0) scale(0.45);
+            opacity: 0;
+            filter: blur(2px);
+          }
+          12% {
+            opacity: 0.6;
+          }
+          60% {
+            opacity: 0.28;
+          }
+          100% {
+            transform: translate(calc(-50% + var(--dx)), -140px) scale(1.2);
+            opacity: 0;
+            filter: blur(10px);
+          }
+        }
+
+        /* Respect reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+          .puff {
+            animation: none;
+            opacity: 0;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function Page() {
   const { data: health, isLoading } = useQuery({
     queryKey: ["health"],
@@ -96,20 +178,21 @@ export default function Page() {
       <div className="relative mx-auto max-w-6xl px-4 py-14 md:py-20">
         {/* Hero */}
         <div className="mb-12 text-center">
-          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs tracking-wide text-white/70 ring-1 ring-inset ring-white/5">
-            {/* <span className="h-1.5 w-1.5 rounded-full bg-white/60" /> */}
+          {/* <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs tracking-wide text-white/70 ring-1 ring-inset ring-white/5">
             <span>PlumeScope</span>
-            {/* <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase">
-              Beta
-            </span> */}
+          </div> */}
+          <div className="relative inline-block">
+            <Image
+              src="/logotr.png"
+              alt="PlumeScope Logo"
+              className="h-25 w-auto m-auto relative z-10"
+              width={25}
+              height={25}
+              priority
+            />
+            {/* The smoke emitter sits above the logo and puffs upward */}
+            <SmokeEmitter />
           </div>
-          <Image
-            src="/logotr.png"
-            alt="PlumeScope Logo"
-            className="h-25 w-auto m-auto mt-2"
-            width={25}
-            height={25}
-          />
           <h1 className="mb-3 text-4xl font-semibold leading-tight tracking-tight md:text-6xl">
             Monitor site-level emissions in real time
           </h1>

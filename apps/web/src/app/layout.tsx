@@ -18,6 +18,7 @@ import {
   Compass,
 } from "@geist-ui/icons";
 import Image from "next/image";
+import { NavProgressIndicator } from "@/components/nav-progress-indicator";
 
 export default function RootLayout({
   children,
@@ -137,8 +138,11 @@ export default function RootLayout({
                 ))}
               </div>
 
-              {/* Right: Admin button + Mobile hamburger */}
+              {/* Right: Progress indicator + Admin button + Mobile hamburger */}
               <div className="flex items-center gap-2">
+                {/* Progress indicator */}
+                <NavProgressIndicator />
+                
                 {/* Admin button - hidden on small screens, shown on medium+ */}
                 <Link
                   href="/admin"

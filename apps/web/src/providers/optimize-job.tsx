@@ -115,14 +115,9 @@ export function OptimizeJobProvider({ children }: { children: React.ReactNode })
     charts: [],
     error: null,
   });
-  const loadingToastId = useRef<string | number | null>(null);
 
   const reset = useCallback(() => {
     setState({ status: "idle", budget: null, result: null, report: null, charts: [], error: null });
-    if (loadingToastId.current != null) {
-      toast.dismiss(loadingToastId.current);
-      loadingToastId.current = null;
-    }
   }, []);
 
   const start = useCallback(async (budget: number) => {
@@ -130,18 +125,6 @@ export function OptimizeJobProvider({ children }: { children: React.ReactNode })
     if (state.status === "running") return;
 
     setState((s) => ({ ...s, status: "running", budget, result: null, report: null, charts: [], error: null }));
-
-    // Persistent loading toast visible across navigation
-    const tid = toast.loading("Generating optimal solutions…", {
-      description: "You can keep browsing. We'll notify you when it's ready.",
-      duration: Infinity,
-      dismissible: false,
-      action: {
-        label: "View",
-        onClick: () => router.push("/optimize"),
-      },
-    });
-    loadingToastId.current = tid;
 
     try {
       const [sites] = await Promise.all([fetchScoreLive()]);
@@ -200,29 +183,25 @@ export function OptimizeJobProvider({ children }: { children: React.ReactNode })
 
       setState((s) => ({ ...s, report: md, charts, status: "success" }));
 
-      // Notify completion, replace loading toast
+      // Notify completion
       toast.success("Optimization complete", {
-        id: loadingToastId.current ?? undefined,
         description: "Your report is ready.",
         action: {
           label: "View report",
           onClick: () => router.push("/optimize"),
         },
       });
-      loadingToastId.current = null;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to generate";
       console.error(error);
       setState((s) => ({ ...s, status: "error", error: message }));
       toast.error("Optimization failed", {
-        id: loadingToastId.current ?? undefined,
         description: message ?? "Please try again.",
         action: {
           label: "View",
           onClick: () => router.push("/optimize"),
         },
       });
-      loadingToastId.current = null;
     }
   }, [router, state.status]);
 

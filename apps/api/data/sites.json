@@ -1,7 +1,7 @@
 ﻿[
   {
     "id": "S1",
-    "name": "Site A",
+    "name": "Site A (Houston)",
     "lat": 29.76,
     "lon": -95.36,
     "CO2e_tpy": 120000,
@@ -9,17 +9,17 @@
   },
   {
     "id": "S2",
-    "name": "Site B",
-    "lat": 29.59,
-    "lon": -95.03,
+    "name": "Site B (West TX)",
+    "lat": 31.5,
+    "lon": -102.8,
     "CO2e_tpy": 90000,
     "CH4_tpy": 320
   },
   {
     "id": "S3",
-    "name": "Site C",
-    "lat": 29.7,
-    "lon": -95.25,
+    "name": "Site C (Central TX)",
+    "lat": 30.2,
+    "lon": -97.7,
     "CO2e_tpy": 45000,
     "CH4_tpy": 95
   }
